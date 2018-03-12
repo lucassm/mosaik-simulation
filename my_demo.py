@@ -19,12 +19,12 @@ world = mosaik.World(SIM_CONFIG)
 mosaiksim = world.start('MosaikSim', eid_prefix='Load_')
 collector = world.start('Collector', step_size=60)
 
-load = mosaiksim.Load()
+prosumer = mosaiksim.Prosumer()
 monitor = collector.Monitor()
 
-world.connect(load, monitor, 'demand')
+world.connect(prosumer, monitor, 'power')
 
-more_loads = mosaiksim.Load.create(2)
-mosaik.util.connect_many_to_one(world, more_loads, monitor, 'demand')
+more_prosumers = mosaiksim.Prosumer.create(2)
+mosaik.util.connect_many_to_one(world, more_prosumers, monitor, 'power')
 
 world.run(END)

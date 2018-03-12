@@ -3,10 +3,10 @@ import my_simulator
 
 META = {
     'models': {
-        'Load': {
+        'Prosumer': {
             'public': True,
             'params': [],
-            'attrs': ['demand'],
+            'attrs': ['power'],
         }
     }
 }
@@ -16,7 +16,7 @@ class MosaikSim(mosaik_api.Simulator):
     def __init__(self):
         super().__init__(META)
         self.simulator = my_simulator.Simulator()
-        self.eid_prefix = 'Load_'
+        self.eid_prefix = 'Prosumer_'
         self.entities = {}
 
     def init(self, sid, eid_prefix):
@@ -30,7 +30,7 @@ class MosaikSim(mosaik_api.Simulator):
 
         for i in range(next_eid, next_eid + num):
             eid = '%s%d' % (self.eid_prefix, i)
-            self.simulator.add_load()
+            self.simulator.add_prosumer()
             self.entities[eid] = i
             entities.append({'eid': eid, 'type': model})
 
@@ -41,13 +41,13 @@ class MosaikSim(mosaik_api.Simulator):
         return time + 60
 
     def get_data(self, outputs):
-        models = self.simulator.loads
+        models = self.simulator.prosumers
         data = {}
         for eid, attrs in outputs.items():
             model_idx = self.entities[eid]
             data[eid] = {}
             for attr in attrs:
-                if attr not in self.meta['models']['Load']['attrs']:
+                if attr not in self.meta['models']['Prosumer']['attrs']:
                     raise ValueError('Unknown output attribute: %s' % attr)
                 data[eid][attr] = getattr(models[model_idx], attr)
         return data
