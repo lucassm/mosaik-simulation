@@ -15,11 +15,12 @@ META = {
 class MosaikSim(mosaik_api.Simulator):
     def __init__(self):
         super().__init__(META)
-        self.simulator = my_simulator.Simulator()
         self.eid_prefix = 'Prosumer_'
         self.entities = {}
 
-    def init(self, sid, eid_prefix):
+    def init(self, sid, eid_prefix, start):
+        if start is not None:
+            self.simulator = my_simulator.Simulator(start)
         if eid_prefix is not None:
             self.eid_prefix = eid_prefix
         return self.meta
@@ -37,8 +38,8 @@ class MosaikSim(mosaik_api.Simulator):
         return entities
 
     def step(self, time, inputs):
-        self.simulator.step()
-        return time + 60
+        self.simulator.step(time)
+        return time + 60 * 15
 
     def get_data(self, outputs):
         models = self.simulator.prosumers

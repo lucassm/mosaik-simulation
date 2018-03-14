@@ -2,6 +2,7 @@
 
 import mosaik
 import mosaik.util
+import my_simulator
 
 SIM_CONFIG = {
     'MosaikSim': {
@@ -12,12 +13,13 @@ SIM_CONFIG = {
     }
 }
 
-END = 10 * 60
+START = '12/03/2018 - 00:00:00'
+END = 24 * 60 * 60  # 1 day in seconds
 
 world = mosaik.World(SIM_CONFIG)
 
-mosaiksim = world.start('MosaikSim', eid_prefix='Load_')
-collector = world.start('Collector', step_size=60)
+mosaiksim = world.start('MosaikSim', eid_prefix='Load_', start=START)
+collector = world.start('Collector', step_size=60*15)
 
 prosumer = mosaiksim.Prosumer()
 monitor = collector.Monitor()
