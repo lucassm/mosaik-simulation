@@ -42,9 +42,9 @@ class MosaikSim(mosaik_api.Simulator):
         for eid, attrs in inputs.items():
             for attr, values in attrs.items():
                 model_idx = self.entities[eid]
-                storage = [i for i in values.values()][0]
+                storage = [i for i in values.values()][0]  # analisar esse ponto
                 storages[model_idx] = storage
-        self.simulator.step(time, storages)
+        power_input = self.simulator.step(time, storages)
         return time + 60 * 15
 
     def get_data(self, outputs):

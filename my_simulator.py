@@ -132,12 +132,13 @@ class Prosumer(object):
 
                     self.power_input += self.load.demand - (excess / 0.25)
             # caso o sistema de armazenamento esteja 100% carregado
-            # toda a energia produzid pela geracao sera utilizada para
+            # toda a energia produzida pela geracao sera utilizada para
             # alimentar as cargas do prosumidor, com possibilidade de 
             # geracao de excedente de energia.
             else:
-                power_input += self.load.demand - self.generation.power
+                self.power_input += self.load.demand - self.generation.power
 
+        return self.power_input 
 
     def __repr__(self):
         return 'Prosumer'
