@@ -6,7 +6,7 @@ META = {
         'Prosumer': {
             'public': True,
             'params': [],
-            'attrs': ['power'],
+            'attrs': ['datetime', 'storage', 'power_input'],
         }
     }
 }
@@ -38,7 +38,13 @@ class MosaikSim(mosaik_api.Simulator):
         return entities
 
     def step(self, time, inputs):
-        self.simulator.step(time)
+        storages = {}
+        for eid, attrs in inputs.items():
+            for attr, values in attrs.items():
+                model_idx = self.entities[eid]
+                storage = [i for i in values.values()][0]
+                storages[model_idx] = storage
+        self.simulator.step(time, storages)
         return time + 60 * 15
 
     def get_data(self, outputs):
