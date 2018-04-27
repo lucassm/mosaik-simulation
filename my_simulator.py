@@ -1,3 +1,12 @@
+"""Este arquivo contém as classes que implementam os comportamentos
+fundamentais dos principais componentes elétricos de uma unidade
+consumidora/produtora de energia, tais como:
+- Load;
+- Generation;
+- Storage;
+- Prosumer.
+"""
+
 from random import uniform
 import datetime as dt
 
@@ -16,11 +25,15 @@ def generate_timeseries(start, time):
 
 
 class Load(object):
+    """Representa uma classe que a cada passo
+    de tempo retorna a demanda média de energia 
+    para um determinado período de tempo.
+    """
     def __init__(self):
         self.demand = 0.0
 
     def step(self, datetime):
-        self.demand = round(uniform(2.0, 6.0), 3)
+        self.demand = round(uniform(6.0, 8.0), 3)
         return self.demand
 
     def __repr__(self):
@@ -28,6 +41,10 @@ class Load(object):
 
 
 class Generation(object):
+    """Representa uma classe que a cada passo
+    de tempo retorna a produção média de energia 
+    para um determinado período de tempo.
+    """
     def __init__(self):
         self.power = 0.0
 
@@ -43,16 +60,21 @@ class Generation(object):
 
 
 class Storage(object):
+    """Representa uma classe que a cada passo
+    de tempo retorna a quantidade de energia
+    consumida/armazenada no sistema de armazenamento
+    dependendo do modo de operação loading/unloading.
+    """
     LOADING = 1
     UNLOADING = 0
 
     def __init__(self):
         self.energy = 0.0
-        self.max_storage = 84.0
+        self.max_storage = 10.0
         self.state = self.LOADING
 
     def step(self, energy_rate):
-        self.energy += energy_rate
+        self.energy += round(energy_rate, 3)
         excess = 0.0
         if self.energy > self.max_storage:
             self.energy = self.max_storage
@@ -66,6 +88,11 @@ class Storage(object):
 
 
 class Prosumer(object):
+    """Esta classe implementa a lógica de consumo/produção
+    de energia para cada passo de tempo de um prosumidor
+    utilizando para isso instâncias das demais classes
+    deste módulo, tais como Load, Generation e Storage
+    """
     def __init__(self):
         self.load = Load()
         self.generation = Generation()
@@ -76,7 +103,7 @@ class Prosumer(object):
         self.power_input = 0.0
         self.load_demand = 0.0
         self.generation_power = 0.0
-        self.storage_energy = 0.0
+        self._storage_energy = 0.0
 
     def step(self):
         self.load_demand = self.load.step(self.datetime)
@@ -138,12 +165,23 @@ class Prosumer(object):
             else:
                 self.power_input += self.load.demand - self.generation.power
 
-        return self.power_input 
+    @property
+    def storage_energy(self):
+        return self.storage.energy
+
+    @storage_energy.setter
+    def storage_energy(self, value):
+        self.storage.energy = value
+        self._storage_energy = value
 
     def __repr__(self):
         return 'Prosumer'
 
 class Simulator(object):
+    """Esta classe cria instâncias da classe
+    Prosumer e faz a chamada de seu método step
+    para cada passo de tempo de simulação.
+    """
     def __init__(self, start_datetime):
         self.prosumers = []
         self.data = []

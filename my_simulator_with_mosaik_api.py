@@ -5,8 +5,8 @@ META = {
     'models': {
         'Prosumer': {
             'public': True,
-            'params': [],
-            'attrs': ['datetime', 'storage', 'power_input'],
+            'params': ['prosumers_id'],
+            'attrs': ['datetime', 'storage','storage_energy', 'power_input'],
         }
     }
 }
@@ -25,12 +25,12 @@ class MosaikSim(mosaik_api.Simulator):
             self.eid_prefix = eid_prefix
         return self.meta
 
-    def create(self, num, model):
+    def create(self, num, model, prosumers_id):
         next_eid = len(self.entities)
         entities = []
 
-        for i in range(next_eid, next_eid + num):
-            eid = '%s%d' % (self.eid_prefix, i)
+        for i, j in zip(range(next_eid, next_eid + num), prosumers_id):
+            eid = '%s%d' % (self.eid_prefix, j)
             self.simulator.add_prosumer()
             self.entities[eid] = i
             entities.append({'eid': eid, 'type': model})
@@ -44,7 +44,7 @@ class MosaikSim(mosaik_api.Simulator):
                 model_idx = self.entities[eid]
                 storage = [i for i in values.values()][0]  # analisar esse ponto
                 storages[model_idx] = storage
-        power_input = self.simulator.step(time, storages)
+        self.simulator.step(time, storages)
         return time + 60 * 15
 
     def get_data(self, outputs):
