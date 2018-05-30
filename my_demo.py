@@ -2,7 +2,6 @@
 
 import mosaik
 import mosaik.util
-import my_simulator
 
 from my_simulator import generate_timeseries
 
@@ -80,6 +79,11 @@ monitor = collector.Monitor()
 # os simuladores
 # ---------------------------------------
 
+
+# ---------------------------------------
+# conecta os prosumers aos agentes de 
+# controle
+# ---------------------------------------
 for prosumer, agent in zip(prosumers, agents):
     world.connect(prosumer,
                   agent,
@@ -88,10 +92,20 @@ for prosumer, agent in zip(prosumers, agents):
                   async_requests=True)
 
 
+
+# ---------------------------------------
+# conecta os agentes ao agente grid
+# ---------------------------------------
 for agent in agents:
     world.connect(grid, agent, 'load_nodes', async_requests=True)
 
+# ---------------------------------------
+# conecta os prosumers ao agente grid
+# ---------------------------------------
 mosaik.util.connect_many_to_one(world, prosumers, grid, 'power_input')
+# ---------------------------------------
+# conecta os prosumers ao agente de monitoramento
+# ---------------------------------------
 mosaik.util.connect_many_to_one(world, prosumers, monitor, 'power_input', 'storage_energy')
 
 world.run(END)

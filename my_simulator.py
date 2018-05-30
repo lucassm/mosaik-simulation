@@ -29,11 +29,17 @@ class Load(object):
     de tempo retorna a demanda média de energia 
     para um determinado período de tempo.
     """
-    def __init__(self):
+    def __init__(self, start_datetime):
         self.demand = 0.0
+        self.start_datetime = start_datetime
+        self.ultimo_datetime = self.start_datetime
 
     def step(self, datetime):
+        delta_de_tempo = datetime - self.ultimo_datetime
+        delta_em_horas = delta_de_tempo.seconds / (60.0 * 60.0)
+
         self.demand = round(uniform(6.0, 8.0), 3)
+        self.energy = round(self.demand * delta_em_horas, 3)
         return self.demand
 
     def __repr__(self):
@@ -45,14 +51,22 @@ class Generation(object):
     de tempo retorna a produção média de energia 
     para um determinado período de tempo.
     """
-    def __init__(self):
+    def __init__(self, start_datetime):
         self.power = 0.0
+        self.start_datetime = start_datetime
+        self.ultimo_datetime = self.start_datetime
 
     def step(self, datetime):
+        delta_de_tempo = datetime - self.ultimo_datetime
+        delta_em_horas = delta_de_tempo.seconds / (60.0 * 60.0)
+
         if datetime.hour >= 18 or datetime.hour < 6:
             self.power = 0.0
         else:
             self.power = round(uniform(0.0, 4.0), 3)
+
+        self.energy = round(self.power * delta_em_horas, 3)
+        
         return self.power
 
     def __repr__(self):
@@ -68,13 +82,15 @@ class Storage(object):
     LOADING = 1
     UNLOADING = 0
 
-    def __init__(self):
+    def __init__(self, start_datetime):
         self.energy = 0.0
         self.max_storage = 10.0
         self.state = self.LOADING
+        self.start_datetime = start_datetime
+        self.ultimo_datetime = self.start_datetime
 
-    def step(self, energy_rate):
-        self.energy += round(energy_rate, 3)
+    def step(self, energy):
+        self.energy += round(energy, 3)
         excess = 0.0
         if self.energy > self.max_storage:
             self.energy = self.max_storage
@@ -93,11 +109,12 @@ class Prosumer(object):
     utilizando para isso instâncias das demais classes
     deste módulo, tais como Load, Generation e Storage
     """
-    def __init__(self):
-        self.load = Load()
-        self.generation = Generation()
-        self.storage = Storage()
-        self.datetime = None
+    def __init__(self, start_datetime):
+        self.start_datetime = start_datetime
+        self.ultimo_datetime = self.start_datetime
+        self.load = Load(self.start_datetime)
+        self.generation = Generation(self.start_datetime)
+        self.storage = Storage(self.start_datetime)
 
         # mosaik simulation controller params
         self.power_input = 0.0
@@ -105,9 +122,13 @@ class Prosumer(object):
         self.generation_power = 0.0
         self._storage_energy = 0.0
 
-    def step(self):
-        self.load_demand = self.load.step(self.datetime)
-        self.generation_power = self.generation.step(self.datetime)
+    def step(self, datetime):
+
+        delta_de_tempo = datetime - self.ultimo_datetime
+        delta_em_horas = delta_de_tempo.seconds / (60.0 * 60.0)
+
+        self.load_demand = self.load.step(datetime)
+        self.generation_power = self.generation.step(datetime)
 
         # ---------------------------------------
         # ----------- PROSUMER LOGIC ------------
@@ -120,20 +141,19 @@ class Prosumer(object):
         # o sistema de armazenamento até o limite de 40% de
         # carga do sistema de armazenamento.
         if  self.storage.state == 0: # unloading
-                power_from_storage = self.load.demand / 2.0
+                energy_from_storage = self.load.energy / 2.0
                 self.power_input += self.load.demand / 2.0
                 
-                energy_from_storage = power_from_storage * 0.25
                 # verifica se o sistema de armazenamento é capaz de
                 # suprir a energia solicitada pela carga
-                if self.storage.energy - energy_from_storage > 0.0:
+                if (self.storage.energy - energy_from_storage) > 0.0:
                     self.storage.energy -= energy_from_storage
                 # caso o sistema de aramazenamento tenha menos energia
                 # armazenada que o suficiente para suprir a solicitacao da carga
                 # a energia na bateria é zerada e o restante de energia necessaria
                 # para suprir a carga é fornecida pela rede
                 else:
-                    self.power_input += self.load.demand - (self.storage.energy) / 0.25
+                    self.power_input += (energy_from_storage - self.storage.energy) / delta_em_horas
                     self.storage.energy = 0.0
         # no estado de carga do sistema de armazenamento
         # a energia gerada é utilizada totalmente para carregar
@@ -143,7 +163,7 @@ class Prosumer(object):
         # a geracao exceda a carga, o excedente é injetado na
         # rede elétrica. 
         elif self.storage.state == 1: # loading
-            generation_energy = self.generation.power * 0.25
+            generation_energy = self.generation.power * delta_em_horas
             # verifica se o armazenamento esta 100% carregado.
             if self.storage.energy < self.storage.max_storage:
                 # verifica se a energia gerada no periodo ira
@@ -157,7 +177,7 @@ class Prosumer(object):
                     excess = generation_energy - (self.storage.max_storage - self.storage.energy) 
                     self.storage.energy = self.storage.max_storage
 
-                    self.power_input += self.load.demand - (excess / 0.25)
+                    self.power_input += (self.load.demand - (excess / delta_em_horas))
             # caso o sistema de armazenamento esteja 100% carregado
             # toda a energia produzida pela geracao sera utilizada para
             # alimentar as cargas do prosumidor, com possibilidade de 
@@ -188,11 +208,11 @@ class Simulator(object):
         self.start_datetime = dt.datetime.strptime(start_datetime, '%d/%m/%Y - %H:%M:%S')
 
     def add_prosumer(self):
-        prosumer = Prosumer()
+        prosumer = Prosumer(self.start_datetime)
         self.prosumers.append(prosumer)
         self.data.append([])
 
-    def step(self, time, storages):
+    def step(self, time, storages=None):
         delta = dt.timedelta(0, time)
         datetime = self.start_datetime + delta
 
@@ -201,8 +221,7 @@ class Simulator(object):
                 self.prosumers[idx].storage = storage
 
         for i, prosumer in enumerate(self.prosumers):
-            prosumer.datetime = datetime
-            prosumer.step()
+            prosumer.step(datetime)
             data = {'datetime': datetime.strftime('%D - %T'),
                     'load_demand': prosumer.load_demand,
                     'generation_power': prosumer.generation_power,
@@ -216,7 +235,7 @@ def main():
         sim.add_prosumer()
 
     time_step = 15 * 60 # seconds
-    time = 10 * 60 * 60
+    time = 1 * 60 * 60
     delta = dt.timedelta(0, time)
     delta_sec = delta.days * (24 * 60 * 60) + delta.seconds
     

@@ -18,13 +18,17 @@ from networkx.readwrite import json_graph
 import random
 import numpy as np
 from tqdm import tqdm
+from terminaltables import AsciiTable
 
  # mygrid imports
 from mygrid.grid import GridElements, ExternalGrid, Section, LoadNode
 from mygrid.grid import Conductor, Switch, TransformerModel, LineModel
 from mygrid.util import p2r, r2p
-from mygrid.power_flow.backward_forward_sweep_3p import calc_power_flow
+from mygrid.power_flow.backward_forward_sweep_3p import calc_power_flow, calc_power_flow_profiling
 
+
+from pycallgraph import PyCallGraph
+from pycallgraph.output import GraphvizOutput
 
 def _search_tree_n_recursive(node, stack, prob, max_nodes, visit, tree):
     """Este metodo tem por objetivo gerar uma árvore de grafo
@@ -55,7 +59,7 @@ def _search_tree_n_recursive(node, stack, prob, max_nodes, visit, tree):
 
         # calcula um número aleatorio e compara a uma probabilidade
         # pré-estabelecida para que um novo nó seja criado.
-        # Também limita o numero máximo de arestas de cada nó em 4 arestas
+        # Também limita o numero máximo de arestas de cada nó em 4
         if random.random() < prob and len(tree[node]) < 4:
             stack.append(node)
             new_node = max(visit) + 1
@@ -80,11 +84,11 @@ def _search_tree_n_recursive(node, stack, prob, max_nodes, visit, tree):
             else:
                 new_node = node
             
-            if new_node not in tree[node]:
-                tree[node].append(new_node)
+            # if new_node not in tree[node]:
+            #     tree[node].append(new_node)
             
-            if node not in tree[new_node]:
-                tree[new_node].append(node)
+            # if node not in tree[new_node]:
+            #     tree[new_node].append(node)
             return (new_node, stack, max_nodes, visit, tree)
     
     # caso o número máximo de nós estabelecidos para o grafo seja atingido
@@ -186,12 +190,12 @@ def _search_tree(node, stack, prob, max_nodes, visit, tree):
     elif len(visit) == max_nodes:
         return tree
 
-def generate_grid(nodes_mv, nodes_lv):
+def generate_grid(nodes_mv):
     """Este método tem por objetivo montar a árvore de grafo que irá
     representar a rede elétrica de média e de baixa tensão, neste método
     é chamado o método generate_tree_graph para gerar o alimentador de média
-    e também cada um de seus dos ramos de baixa tensão, de acordo com os
-    parâmetros passados nodes_mv e nodes_lv.
+    e também cada um de seus dos ramos de baixa tensão, de acordo com o
+    parâmetro nodes_mv.
 
     Neste método também é gerado um objeto graph do módulo python de análise
     de grafos nxnetwork e a partir dele armazenado criado um dicionário com
@@ -215,9 +219,14 @@ def generate_grid(nodes_mv, nodes_lv):
     # gera os grafos dos ramais da rede de baixa tensão
     lv_grids = dict()
     start = nodes_mv
+
+    # quantidade de consumidores conectados a um transformador
+    # de distribuição
+    nodes_qtd_list = [8, 12, 20]
+    
     for h in tqdm(range(2, nodes_mv)):
-        prob_ = 0.7
-        max_nodes_ = nodes_lv
+        prob_ = 0.6
+        max_nodes_ = random.choice(nodes_qtd_list)
 
         t = generate_tree_graph(node=start, tree=dict(), max_nodes=max_nodes_, prob=prob_)
         graph.add_nodes_from(t.keys())
@@ -225,7 +234,7 @@ def generate_grid(nodes_mv, nodes_lv):
         for i, j in t.items():
             for k in j:
                 graph.add_edge(i, k)
-        start += nodes_lv
+        start += max_nodes_
 
     # acréscimo ao dicionário json para indicar nos nós o seu 
     # nome, nível de tensão, cor para representação gráfica 
@@ -236,9 +245,16 @@ def generate_grid(nodes_mv, nodes_lv):
         if n >= nodes_mv:
             graph.node[n]['color'] = 'rgb(255, 127, 14)'
             graph.node[n]['voltage_level'] = 'low voltage'
-            s = (6.0 - 4.0) * random.random() + 4.0
+
+            # demanda diversificada dos consumidores conectados em baixa tensão
+            s = (2.5 - 1.0) * random.random() + 1.0
+
             graph.node[n]['active_power'] = round(s * np.cos(np.arccos(pf)), 3)
             graph.node[n]['reactive_power'] = round(s * np.sin(np.arcsin(pf)), 3)
+            if s <= 2.0:
+                graph.node[n]['phase'] = random.choice(['a', 'b', 'c'])
+            else:
+                graph.node[n]['phase'] = 'abc'
         else:
             graph.node[n]['voltage_level'] = 'medium voltage'
             graph.node[n]['color'] = 'rgb(31, 119, 180)'
@@ -249,17 +265,23 @@ def generate_grid(nodes_mv, nodes_lv):
     # acréscimo ao dicionário json para indicar nas linhas o seu 
     # nome, comprimento, indicação se linha ou transformador e 
     # presença ou não de chave
-    a = 0.2
-    b = 0.5
     for i, j in graph.edges.items():
         source, target = i
         graph.edges[i]['name'] = 'Section_%s_%s' % (source, target)
-        graph.edges[i]['length'] = round((b - a) * random.random() + a, 3)
 
         if graph.node[source]['voltage_level'] != graph.node[target]['voltage_level']:
             graph.edges[i]['type'] = 'transformer'
         else:
             graph.edges[i]['type'] = 'line'
+
+            if graph.node[source]['voltage_level'] == 'medium voltage':
+                a = 0.1
+                b = 0.25
+                graph.edges[i]['length'] = round((b - a) * random.random() + a, 3)
+            else:
+                a = 0.006
+                b = 0.01
+                graph.edges[i]['length'] = round((b - a) * random.random() + a, 3)
 
         if source == 0 and target == 1:
             graph.edges[i]['switch'] = 'sw_1'
@@ -270,13 +292,13 @@ def generate_grid(nodes_mv, nodes_lv):
     d = json_graph.node_link_data(graph) # node-link format to serialize
     
     d['transformes'] = []
-    transformers_powers = {10.0: 5,
-                           15.0: 5,
-                           30.0: 15,
-                           45.0: 15,
-                           75.0: 20,
-                           112.5: 15,
-                           150.0: 15,
+    # percentual de transformadores com base no Critério de Projetos 001 da
+    # ENEL: Rede de distribuição aérea de média e baixa tensão.
+    transformers_powers = {15.0: 5,
+                           45.0: 25,
+                           75.0: 25,
+                           112.5: 25,
+                           150.0: 10,
                            225.0: 5,
                            300.0: 5}
     
@@ -313,11 +335,21 @@ def create_mygrid_model(file):
     sw1 = Switch(name='sw_1', state=1)
 
     # transformers
+    zpu = 3.5 / 100.0 # zpu = z% / 100.0
+    vbase = 220.0 # Volts
+    sbase = 112.5 # kVA
+    zbase = (vbase ** 2) / (sbase * 1e3)
+    z = zpu * zbase # impedancia do trafo referica a baixa tensao
+
+    a = 3.5 # relação x/r, valor adotado
+    r = z / np.sqrt(1 + a**2)
+    x = a * r
+    
     t1 = TransformerModel(name="T1",
                           primary_voltage=vll_mt,
                           secondary_voltage=vll_bt,
                           power=225e3,
-                          impedance=0.01 + 0.2j)
+                          impedance=r + 1j*x)
 
     phase_conduct = Conductor(id=57)
     neutral_conduct = Conductor(id=44)
@@ -354,9 +386,22 @@ def create_mygrid_model(file):
                                        power=s,
                                        voltage=vll_mt, external_grid=eg1)                
         elif node['voltage_level'] == 'low voltage':
-            node_object = LoadNode(name='Node_' + str(node['name']),
-                                   power=s,
-                                   voltage=vll_bt)
+            if node['phase'] == 'abc':
+                node_object = LoadNode(name='Node_' + str(node['name']),
+                                       power=s,
+                                       voltage=vll_bt)
+            elif node['phase'] == 'a':
+                node_object = LoadNode(name='Node_' + str(node['name']),
+                                       ppa=s,
+                                       voltage=vll_bt)
+            elif node['phase'] == 'b':
+                node_object = LoadNode(name='Node_' + str(node['name']),
+                                       ppb=s,
+                                       voltage=vll_bt)
+            elif node['phase'] == 'c':
+                node_object = LoadNode(name='Node_' + str(node['name']),
+                                       ppc=s,
+                                       voltage=vll_bt)
         nodes[node['name']] = node_object
 
     sections = dict()
@@ -397,14 +442,38 @@ def create_mygrid_model(file):
     grid_elements.create_grid()
     return grid_elements
 
+def display_data(grid):
+    headings = ['node', 'voltage (V)']
+    datas = [headings]
+    for i, j in grid.load_nodes.items():
+        v = j.vp
+        v = r2p(v)
+        m = v[0]
+        a = v[1]
+        text = ''
+        for k, q in zip(m, a):
+            text += '{r} ∠ {i}º '.format(r=round(k[0], 2), i=round(q[0], 2))
+        datas.append([i, text])
+    table_data = datas
+    table = AsciiTable(table_data)    
+    print(table.table)
+
+    headings = ['line', 'length (milhas)']
+    datas = [headings]
+    for i, j in grid.sections.items():
+        if j.transformer is None:
+            l = j.length
+            datas.append([i, str(l)])
+    table_data = datas
+    table = AsciiTable(table_data)
+    #print(table.table)
 
 def main():
-    nodes_mv_ = 60
-    nodes_lv_ = 5
-    graph = generate_grid(nodes_mv=nodes_mv_, nodes_lv=nodes_lv_)
+    nodes_mv_ = 30
+    graph = generate_grid(nodes_mv=nodes_mv_)
     return graph
 
 if __name__ == '__main__':
-    graph = main()
+    #graph = main()
     grid = create_mygrid_model(open('force.json', 'r'))
-    calc_power_flow(grid.dist_grids['F0'])
+    calc_power_flow_profiling(grid.dist_grids['F0'])
