@@ -32,11 +32,13 @@ class Load(object):
     def __init__(self, start_datetime):
         self.demand = 0.0
         self.start_datetime = start_datetime
-        self.ultimo_datetime = self.start_datetime
+        self.datetime = self.start_datetime
 
     def step(self, datetime):
-        delta_de_tempo = datetime - self.ultimo_datetime
+        delta_de_tempo = datetime - self.datetime
         delta_em_horas = delta_de_tempo.seconds / (60.0 * 60.0)
+
+        self.datetime = datetime
 
         self.demand = round(uniform(6.0, 8.0), 3)
         self.energy = round(self.demand * delta_em_horas, 3)
@@ -54,11 +56,13 @@ class Generation(object):
     def __init__(self, start_datetime):
         self.power = 0.0
         self.start_datetime = start_datetime
-        self.ultimo_datetime = self.start_datetime
+        self.datetime = self.start_datetime
 
     def step(self, datetime):
-        delta_de_tempo = datetime - self.ultimo_datetime
+        delta_de_tempo = datetime - self.datetime
         delta_em_horas = delta_de_tempo.seconds / (60.0 * 60.0)
+
+        self.datetime = datetime
 
         if datetime.hour >= 18 or datetime.hour < 6:
             self.power = 0.0
@@ -87,7 +91,7 @@ class Storage(object):
         self.max_storage = 10.0
         self.state = self.LOADING
         self.start_datetime = start_datetime
-        self.ultimo_datetime = self.start_datetime
+        self.datetime = self.start_datetime
 
     def step(self, energy):
         self.energy += round(energy, 3)
@@ -111,7 +115,7 @@ class Prosumer(object):
     """
     def __init__(self, start_datetime):
         self.start_datetime = start_datetime
-        self.ultimo_datetime = self.start_datetime
+        self.datetime = self.start_datetime
         self.load = Load(self.start_datetime)
         self.generation = Generation(self.start_datetime)
         self.storage = Storage(self.start_datetime)
@@ -124,8 +128,10 @@ class Prosumer(object):
 
     def step(self, datetime):
 
-        delta_de_tempo = datetime - self.ultimo_datetime
+        delta_de_tempo = datetime - self.datetime
         delta_em_horas = delta_de_tempo.seconds / (60.0 * 60.0)
+
+        self.datetime = datetime
 
         self.load_demand = self.load.step(datetime)
         self.generation_power = self.generation.step(datetime)
