@@ -1,7 +1,9 @@
 """This script file generate a random feeder with medium and 
 low voltage nodes, write the graph to a networkx graph object
 then write the graph to a json file named force.json with some
- grid informations. This file is loaded and used to create 
+ grid informations. 
+
+ This file is loaded and used to create 
  mygrid objects and can be used to visualize the grid in a html
  page. For this just open the force.html in a web browser. 
 """
@@ -9,7 +11,7 @@ then write the graph to a json file named force.json with some
 #    Copyright (C) 2018 by
 #    Lucas S Melo <lucassmelo@dee.ufc.br>
 #    All rights reserved.
-#    BSD license.
+#    MIT license.
 
 __author__ = """Lucas S Melo <lucassmelo@dee.ufc.br>"""
 import json
@@ -27,10 +29,7 @@ from mygrid.util import p2r, r2p
 from mygrid.power_flow.backward_forward_sweep_3p import calc_power_flow, calc_power_flow_profiling
 
 
-from pycallgraph import PyCallGraph
-from pycallgraph.output import GraphvizOutput
-
-def _search_tree_n_recursive(node, stack, prob, max_nodes, visit, tree):
+def _search_tree(node, stack, prob, max_nodes, visit, tree):
     """Este metodo tem por objetivo gerar uma árvore de grafo
     aleatoria sem utilizar um processo recursivo
 
@@ -106,11 +105,11 @@ def generate_tree_graph(node, tree, max_nodes, prob):
     nodes_count = dict()
     prob_ = prob
 
-    # loço principal, realiza as chamadas ao método _search_tree_n_recursive
+    # loço principal, realiza as chamadas ao método _search_tree
     # enquanto o número de nós da árvore gerada for inferior ao número máximo
     # pré-estabelecido.
     while len(tree.keys()) < max_nodes:
-        data = _search_tree_n_recursive(node, stack, prob_, max_nodes, visit, tree)
+        data = _search_tree(node, stack, prob_, max_nodes, visit, tree)
         node = data[0]
         stack = data[1]
         max_nodes = data[2]
@@ -142,53 +141,6 @@ def generate_tree_graph(node, tree, max_nodes, prob):
 
     return tree
 
-def _search_tree(node, stack, prob, max_nodes, visit, tree):
-    """Este metodo tem por objetivo gerar uma árvore de grafo
-    aleatoria utilizando um processo recursivo
-
-    node: no a ser analisado.
-    stack: pilha que indica a posicao atual na arvore de grafo.
-    prob: probabilidade para criacao de novos nós.
-    max_nodes: numero maximo de nós na árvore de grafo.
-    visit: nós já visitados.
-    tree: dicionário que representa a árvore de grafo, em que
-          as chaves representam os nós e os valores são uma lista
-          com todos os vizinhos do nó.
-    """
-
-    # verifica se o no atual ja foi visitado, caso este ainda não
-    # tenha sido visitado ele é incorporado à árvore de grafo.
-    if node not in visit:
-        visit.append(node)
-        if node not in tree.keys():
-            tree[node] = list()
-
-    # verifica se a árvore de grafo já tem a quantidade máxima
-    # admissível de nós
-    if len(visit) < max_nodes:
-
-        # calcula um número aleatorio e compara a uma probabilidade
-        # pré-estabelecida para que um novo nó seja criado.
-        # Também limita o numero máximo de arestas de cada nó em 4 arestas
-        if random.random() < prob and len(tree[node]) < 4:
-            stack.append(node)
-            new_node = max(visit) + 1
-            tree[node].append(new_node)
-            tree[new_node] = [node]
-            return _search_tree(node=new_node, stack=stack, prob=prob, max_nodes=max_nodes, visit=visit, tree=tree)
-        else:
-            if stack != []:
-                new_node = stack.pop()
-            else:
-                new_node = node
-            if new_node not in tree[node]:
-                tree[node].append(new_node)
-            if node not in tree[new_node]:
-                tree[new_node].append(node)
-            return _search_tree(node=new_node, stack=stack, prob=prob, max_nodes=max_nodes, visit=visit, tree=tree)
-                
-    elif len(visit) == max_nodes:
-        return tree
 
 def generate_grid(nodes_mv):
     """Este método tem por objetivo montar a árvore de grafo que irá
@@ -240,18 +192,18 @@ def generate_grid(nodes_mv):
     # nome, nível de tensão, cor para representação gráfica 
     # e potências ativas e reativas.
     pf = 0.9 # power factor
-    for n in graph:
+    for k, n in enumerate(graph):
         graph.node[n]['name'] = n
         if n >= nodes_mv:
             graph.node[n]['color'] = 'rgb(255, 127, 14)'
             graph.node[n]['voltage_level'] = 'low voltage'
 
             # demanda diversificada dos consumidores conectados em baixa tensão
-            s = (2.5 - 1.0) * random.random() + 1.0
+            s = ((1.5 - 0.8) * random.random() + 0.8) * (1.0 / (k * 0.001 + 1.0)) 
 
             graph.node[n]['active_power'] = round(s * np.cos(np.arccos(pf)), 3)
             graph.node[n]['reactive_power'] = round(s * np.sin(np.arcsin(pf)), 3)
-            if s <= 2.0:
+            if s < 2.0:
                 graph.node[n]['phase'] = random.choice(['a', 'b', 'c'])
             else:
                 graph.node[n]['phase'] = 'abc'
@@ -275,8 +227,8 @@ def generate_grid(nodes_mv):
             graph.edges[i]['type'] = 'line'
 
             if graph.node[source]['voltage_level'] == 'medium voltage':
-                a = 0.1
-                b = 0.25
+                a = 0.05
+                b = 0.1
                 graph.edges[i]['length'] = round((b - a) * random.random() + a, 3)
             else:
                 a = 0.006
@@ -469,11 +421,11 @@ def display_data(grid):
     #print(table.table)
 
 def main():
-    nodes_mv_ = 30
+    nodes_mv_ = 8
     graph = generate_grid(nodes_mv=nodes_mv_)
     return graph
 
 if __name__ == '__main__':
-    #graph = main()
+    graph = main()
     grid = create_mygrid_model(open('force.json', 'r'))
-    calc_power_flow_profiling(grid.dist_grids['F0'])
+    # calc_power_flow(grid.dist_grids['F0'])

@@ -18,20 +18,24 @@ class MosaikSim(mosaik_api.Simulator):
         self.eid_prefix = 'Prosumer_'
         self.entities = {}
 
-    def init(self, sid, eid_prefix, start):
-        if start is not None:
-            self.simulator = my_simulator.Simulator(start)
-        if eid_prefix is not None:
-            self.eid_prefix = eid_prefix
+    def init(self, sid, eid_prefix, start, step_size, debug=False):
+        self.simulator = my_simulator.Simulator(start)
+        self.step_size = step_size
+        self.debug = debug
+        self.eid_prefix = eid_prefix
         return self.meta
 
     def create(self, num, model, prosumers_id):
+        '''O parametro prosumers_id é uma tupla em que a posição 0 contém
+        o nome do nó considerado e a posição 1 contém um valor booleano
+        para indicar ou não a presença de DER no consumidor
+        '''
         next_eid = len(self.entities)
         entities = []
 
         for i, j in zip(range(next_eid, next_eid + num), prosumers_id):
-            eid = '%s%d' % (self.eid_prefix, j)
-            self.simulator.add_prosumer()
+            eid = '%s%d' % (self.eid_prefix, j[0])
+            self.simulator.add_prosumer(j[1])
             self.entities[eid] = i
             entities.append({'eid': eid, 'type': model})
 
@@ -45,7 +49,7 @@ class MosaikSim(mosaik_api.Simulator):
                 storage = [i for i in values.values()][0]  # analisar esse ponto
                 storages[model_idx] = storage
         self.simulator.step(time, storages)
-        return time + 60 * 15
+        return time + self.step_size
 
     def get_data(self, outputs):
         models = self.simulator.prosumers

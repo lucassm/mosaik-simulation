@@ -29,9 +29,11 @@ class VendedorSim(mosaik_api.Simulator):
         self.eid_prefix = 'Vededor_'
         self.entities = {}
 
-    def init(self, sid, eid_prefix, start):
+    def init(self, sid, eid_prefix, start, step_size, debug=False):
         if start is not None:
             self.start_datetime = dt.datetime.strptime(start, '%d/%m/%Y - %H:%M:%S')
+            self.step_size = step_size
+            self.debug = debug
             self.vendedor = my_sbs.Vendedor(energia=1e3,
                                             max_kwh=5.0,
                                             preco_base=0.71504,
@@ -78,8 +80,10 @@ class VendedorSim(mosaik_api.Simulator):
                 ordem = list(values.values())
                 if ordem != []:
                     ordens += ordem
-        print('--->> Ordens recebidas dos consumidores:')
-        print(ordens)
+
+        if self.debug:
+            print('--->> Ordens recebidas dos consumidores:')
+            print(ordens)
         self.transacoes = self.vendedor.vender(ordens, datetime)
         self.transacoes_realizadas += self.transacoes
 
@@ -90,10 +94,12 @@ class VendedorSim(mosaik_api.Simulator):
                         commands[vendedor_eid] = {}
                     if consumidor_eid not in commands[vendedor_eid]:
                         commands[vendedor_eid][consumidor_eid] = {}
-                    
+                    commands[vendedor_eid][consumidor_eid]['valor_kwh'] = self.vendedor.preco_base
+
                     for transacao in self.transacoes:
                         if transacao['consumidor_id'] in consumidor_eid:
                             commands[vendedor_eid][consumidor_eid]['transacao'] = transacao
+
 
         '''O dicionário commands tem a seguinte estrutura:
         {
@@ -107,7 +113,7 @@ class VendedorSim(mosaik_api.Simulator):
         '''
         yield self.mosaik.set_data(commands)
 
-        return time + 60  # Step size is 1 minute
+        return time + self.step_size
 
     # def get_data(self):
     #     '''O dicionário outputs tem a seguinte estrutura:
@@ -137,7 +143,8 @@ class VendedorSim(mosaik_api.Simulator):
     #     return data
 
     def finalize(self):
-        print(self.vendedor.energia)
+        pass
+        #print(self.vendedor.energia)
 
 class ConsumidorSim(mosaik_api.Simulator):
     def __init__(self):
@@ -145,9 +152,10 @@ class ConsumidorSim(mosaik_api.Simulator):
         self.eid_prefix = 'Consumidor_'
         self.entities = {}
 
-    def init(self, sid, eid_prefix, start):
+    def init(self, sid, eid_prefix, start, debug=False):
         if start is not None:
             self.start_datetime = dt.datetime.strptime(start, '%d/%m/%Y - %H:%M:%S')
+            self.debug = debug
             self.ultimo_datetime = self.start_datetime
             self.consumidores = dict()
         if eid_prefix is not None:
@@ -163,7 +171,9 @@ class ConsumidorSim(mosaik_api.Simulator):
             consumidor = my_sbs.Consumidor(id=self.eid_prefix + str(i),
                                            start_datetime=self.start_datetime,
                                            energia_disponivel_kwh=3.0)
-            print('+ Consumidor {id} criado.'.format(id=consumidor.id))
+            if self.debug:
+                print('+ Consumidor {id} criado.'.format(id=consumidor.id))
+            
             self.consumidores[consumidor.id] = consumidor
             self.entities[eid] = i
             entities.append({'eid': eid, 'type': model})
@@ -199,8 +209,10 @@ class ConsumidorSim(mosaik_api.Simulator):
         # atualiza os valores de energia comprada pelos
         # compradores pelas ordens enviadas ao vendedor
         for transacao in transacoes:
-            print('--->> Consolidando transacao..................')
-            print(transacao)
+            if self.debug:
+                print('--->> Consolidando transacao..................')
+                print(transacao)
+            
             consumidor_id = transacao['consumidor_id']
             consumidor = self.consumidores[consumidor_id]
             consumidor.atualizar_energia(energia_kwh=transacao['kwh'])
@@ -210,11 +222,14 @@ class ConsumidorSim(mosaik_api.Simulator):
         # gera as ordens a serem solicitadas pelos compradores ao vendedor
         for eid, consumidor in zip(self.entities.keys(), self.consumidores.values()):
             ordem = consumidor.atualizar_consumo(datetime)
-            print('Consumo do consumidor {id} atualizado.'.format(id=consumidor.id))
+            if self.debug:
+                print('Consumo do consumidor {id} atualizado.'.format(id=consumidor.id))
+            
             if ordem is not None:
                 self.ordens[eid] = ordem
-                print('>> Ordem de compra gerada por: {id}'.format(id=consumidor.id))
-                print(ordem)
+                if self.debug:
+                    print('>> Ordem de compra gerada por: {id}'.format(id=consumidor.id))
+                    print(ordem)
 
         return time + 60  # Step size is 1 minute
 
@@ -255,8 +270,10 @@ class ConsumidorSim(mosaik_api.Simulator):
             },
         }
         '''
-        print('--->> Envio de dados para o vendedor:')
-        print(data)
+        if self.debug:
+            print('--->> Envio de dados para o vendedor:')
+            print(data)
+
         return data
 
 

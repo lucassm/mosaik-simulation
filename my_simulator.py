@@ -9,11 +9,12 @@ consumidora/produtora de energia, tais como:
 
 from random import uniform
 import datetime as dt
+import enlopy as el
+import numpy as np
 
+def generate_timeseries(start, time, step):
 
-def generate_timeseries(start, time):
-
-    time_step = 15 * 60 # seconds
+    time_step = step * 60 # seconds
     dt_start = dt.datetime.strptime(start, '%d/%m/%Y - %H:%M:%S')
     delta = dt.timedelta(0, time)
 
@@ -34,13 +35,17 @@ class Load(object):
         self.start_datetime = start_datetime
         self.datetime = self.start_datetime
 
+        # definição da curva de carga do consumidor
+        self.load_curve = el.gen_daily_stoch_el(uniform(5.0, 10.0))
+
     def step(self, datetime):
         delta_de_tempo = datetime - self.datetime
         delta_em_horas = delta_de_tempo.seconds / (60.0 * 60.0)
 
         self.datetime = datetime
-
-        self.demand = round(uniform(6.0, 8.0), 3)
+        self.demand = np.interp(datetime.hour + datetime.minute / 60.0,
+                                np.arange(24),
+                                self.load_curve)
         self.energy = round(self.demand * delta_em_horas, 3)
         return self.demand
 
@@ -67,7 +72,7 @@ class Generation(object):
         if datetime.hour >= 18 or datetime.hour < 6:
             self.power = 0.0
         else:
-            self.power = round(uniform(0.0, 4.0), 3)
+            self.power = round(uniform(0.0, 0.8), 3)
 
         self.energy = round(self.power * delta_em_horas, 3)
         
@@ -113,12 +118,18 @@ class Prosumer(object):
     utilizando para isso instâncias das demais classes
     deste módulo, tais como Load, Generation e Storage
     """
-    def __init__(self, start_datetime):
+    def __init__(self, start_datetime, has_der=True):
         self.start_datetime = start_datetime
         self.datetime = self.start_datetime
         self.load = Load(self.start_datetime)
-        self.generation = Generation(self.start_datetime)
-        self.storage = Storage(self.start_datetime)
+        self.has_der = has_der
+
+        if self.has_der:
+            self.generation = Generation(self.start_datetime)
+            self.storage = Storage(self.start_datetime)
+        else:
+            self.generation = None
+            self.storage = None
 
         # mosaik simulation controller params
         self.power_input = 0.0
@@ -134,71 +145,82 @@ class Prosumer(object):
         self.datetime = datetime
 
         self.load_demand = self.load.step(datetime)
-        self.generation_power = self.generation.step(datetime)
 
-        # ---------------------------------------
-        # ----------- PROSUMER LOGIC ------------
-        # ---------------------------------------
+        # verifica se o consumidor tem recursos energéticos distribuídos
+        if self.has_der:
+            self.generation_power = self.generation.step(datetime)
 
-        self.power_input = 0.0
+            # ---------------------------------------
+            # ----------- PROSUMER LOGIC ------------
+            # ---------------------------------------
 
-        # No estado de descarga do sistema de armazenamento
-        # a carga é dividida pela metade entre a rede e
-        # o sistema de armazenamento até o limite de 40% de
-        # carga do sistema de armazenamento.
-        if  self.storage.state == 0: # unloading
-                energy_from_storage = self.load.energy / 2.0
-                self.power_input += self.load.demand / 2.0
-                
-                # verifica se o sistema de armazenamento é capaz de
-                # suprir a energia solicitada pela carga
-                if (self.storage.energy - energy_from_storage) > 0.0:
-                    self.storage.energy -= energy_from_storage
-                # caso o sistema de aramazenamento tenha menos energia
-                # armazenada que o suficiente para suprir a solicitacao da carga
-                # a energia na bateria é zerada e o restante de energia necessaria
-                # para suprir a carga é fornecida pela rede
+            self.power_input = 0.0
+
+            # No estado de descarga do sistema de armazenamento
+            # a carga é dividida pela metade entre a rede e
+            # o sistema de armazenamento até o limite de 40% de
+            # carga do sistema de armazenamento.
+            if  self.storage.state == 0: # unloading
+                    energy_from_storage = self.load.energy / 2.0
+                    self.power_input += self.load.demand / 2.0
+                    
+                    # verifica se o sistema de armazenamento é capaz de
+                    # suprir a energia solicitada pela carga
+                    if (self.storage.energy - energy_from_storage) > 0.0:
+                        self.storage.energy -= energy_from_storage
+                    # caso o sistema de aramazenamento tenha menos energia
+                    # armazenada que o suficiente para suprir a solicitacao da carga
+                    # a energia na bateria é zerada e o restante de energia necessaria
+                    # para suprir a carga é fornecida pela rede
+                    else:
+                        self.power_input += (energy_from_storage - self.storage.energy) / delta_em_horas
+                        self.storage.energy = 0.0
+            # no estado de carga do sistema de armazenamento
+            # a energia gerada é utilizada totalmente para carregar
+            # o sistema de armazenamento. Caso este já esteja com
+            # 100% de carga, a energia gerada é utilizada para
+            # suprir a carga e diminuir o consumo da rede. Caso
+            # a geracao exceda a carga, o excedente é injetado na
+            # rede elétrica. 
+            elif self.storage.state == 1: # loading
+                generation_energy = self.generation.power * delta_em_horas
+                # verifica se o armazenamento esta 100% carregado.
+                if self.storage.energy < self.storage.max_storage:
+                    # verifica se a energia gerada no periodo ira
+                    # carregar o sistema de armazenameto e gerar excedente. 
+                    if self.storage.max_storage - self.storage.energy > generation_energy:
+                        self.storage.energy += generation_energy
+                        self.power_input += self.load.demand
+                    # caso haja excedente este excedente é utilizado para dividir
+                    # a carga com a rede elétrica.
+                    else:
+                        excess = generation_energy - (self.storage.max_storage - self.storage.energy) 
+                        self.storage.energy = self.storage.max_storage
+
+                        self.power_input += (self.load.demand - (excess / delta_em_horas))
+                # caso o sistema de armazenamento esteja 100% carregado
+                # toda a energia produzida pela geracao sera utilizada para
+                # alimentar as cargas do prosumidor, com possibilidade de 
+                # geracao de excedente de energia.
                 else:
-                    self.power_input += (energy_from_storage - self.storage.energy) / delta_em_horas
-                    self.storage.energy = 0.0
-        # no estado de carga do sistema de armazenamento
-        # a energia gerada é utilizada totalmente para carregar
-        # o sistema de armazenamento. Caso este já esteja com
-        # 100% de carga, a energia gerada é utilizada para
-        # suprir a carga e diminuir o consumo da rede. Caso
-        # a geracao exceda a carga, o excedente é injetado na
-        # rede elétrica. 
-        elif self.storage.state == 1: # loading
-            generation_energy = self.generation.power * delta_em_horas
-            # verifica se o armazenamento esta 100% carregado.
-            if self.storage.energy < self.storage.max_storage:
-                # verifica se a energia gerada no periodo ira
-                # carregar o sistema de armazenameto e gerar excedente. 
-                if self.storage.max_storage - self.storage.energy > generation_energy:
-                    self.storage.energy += generation_energy
-                    self.power_input += self.load.demand
-                # caso haja excedente este excedente é utilizado para dividir
-                # a carga com a rede elétrica.
-                else:
-                    excess = generation_energy - (self.storage.max_storage - self.storage.energy) 
-                    self.storage.energy = self.storage.max_storage
-
-                    self.power_input += (self.load.demand - (excess / delta_em_horas))
-            # caso o sistema de armazenamento esteja 100% carregado
-            # toda a energia produzida pela geracao sera utilizada para
-            # alimentar as cargas do prosumidor, com possibilidade de 
-            # geracao de excedente de energia.
-            else:
-                self.power_input += self.load.demand - self.generation.power
+                    self.power_input += self.load.demand - self.generation.power
+        else:
+            self.power_input = self.load_demand
 
     @property
     def storage_energy(self):
-        return self.storage.energy
+        if self.has_der:
+            return self.storage.energy
+        else:
+            return 0.0
 
     @storage_energy.setter
     def storage_energy(self, value):
-        self.storage.energy = value
-        self._storage_energy = value
+        if self.has_der:
+            self.storage.energy = value
+            self._storage_energy = value
+        else:
+            pass
 
     def __repr__(self):
         return 'Prosumer'
@@ -213,8 +235,8 @@ class Simulator(object):
         self.data = []
         self.start_datetime = dt.datetime.strptime(start_datetime, '%d/%m/%Y - %H:%M:%S')
 
-    def add_prosumer(self):
-        prosumer = Prosumer(self.start_datetime)
+    def add_prosumer(self, has_der):
+        prosumer = Prosumer(self.start_datetime, has_der)
         self.prosumers.append(prosumer)
         self.data.append([])
 

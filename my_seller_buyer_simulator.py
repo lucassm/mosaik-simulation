@@ -47,7 +47,7 @@ class Vendedor(object):
                     transacao['kwh'] = 0.0
                 else:
                     # caacterizacao do aumento da tarifa no horário de ponta
-                    if datetime.hour >= 18 and datetime < 21:
+                    if datetime.hour >= 18 and datetime.hour < 21:
                         transacao['valor (R$)'] = 1.3 * round(self.preco_base * ordem['kwh'], 2)
                     else:
                         transacao['valor (R$)'] = round(self.preco_base * ordem['kwh'], 2)
@@ -72,13 +72,17 @@ class Consumidor(object):
         self.energia_disponivel_kwh = energia_disponivel_kwh
         self.energia_consumida_kwh = 0.0
 
-    def atualizar_consumo(self, datetime):
+    def atualizar_consumo(self, datetime, power_kw):
         delta_de_tempo = datetime - self.ultimo_datetime
         delta_em_horas = delta_de_tempo.seconds / (60.0 * 60.0)
         
-        consumo_medio_por_hora = (0.5 - 0.3) * random.random() + 0.3
+        # consumo_medio_por_hora = (0.5 - 0.3) * random.random() + 0.3
+        # valor_de_consumo_kwh = consumo_medio_por_hora * delta_em_horas
+
+        valor_de_consumo_kwh = power_kw * delta_em_horas
+
+        # print('valor de energia consumida em kwh: %4.4f' % valor_de_consumo_kwh)
         
-        valor_de_consumo_kwh = consumo_medio_por_hora * delta_em_horas
         self.energia_consumida_kwh += valor_de_consumo_kwh
         self.energia_disponivel_kwh -= valor_de_consumo_kwh
         
@@ -86,6 +90,9 @@ class Consumidor(object):
             ordem = {'consumidor_id': self.id,
                      'kwh': (4.0 - 1.0) * random.random() + 1.0}
             return ordem
+        elif self.energia_disponivel_kwh >= 10.0:
+            pass
+            # lógica de venda de energia
         else:
             return None
 
