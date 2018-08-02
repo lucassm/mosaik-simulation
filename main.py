@@ -3,7 +3,7 @@
 import mosaik
 import mosaik.util
 
-from my_simulator import generate_timeseries
+from prosumer import generate_timeseries
 import random
 
 import matplotlib.pyplot as plt
@@ -16,17 +16,20 @@ import json
 # ---------------------------------------
 
 SIM_CONFIG = {
-    'MosaikSim': {
-        'python': 'my_simulator_with_mosaik_api:MosaikSim',
+    'ProsumerSim': {
+        'python': 'prosumer_sim_with_mosaik_api:ProsumerSim',
     },
     'AgentContoller': {
-        'python': 'my_controller:Controller',
+        'python': 'agent_storage_control:AgentStorageControl',
     },
-    'MyGridSim':{
-        'python': 'my_grid_mosaik:MyGrid'
+    'MyGridSim': {
+        'python': 'mygrid_sim_with_mosaik_api:MyGrid',
     },
-    'VendedorSim': {
-        'python': 'my_seller_buyer_mosaik_sim:VendedorSim',
+    'MarketSim': {
+        'python': 'market_sim_with_mosaik_api:MarketSim',
+    },
+    'CustomerSim': {
+        'python': 'market_sim_with_mosaik_api:CustomerSim',
     },
     'Collector': {
         'cmd': 'python collector.py %(addr)s',
@@ -40,11 +43,11 @@ DEBUG = False
 # da simulação
 # ---------------------------------------
 
-verificacoes = 75
+verifications = 60 * 12
 
-STEP = 10 # step dos simuladores em minutos
+STEP = 1 # step dos simuladores em minutos
 START = '12/03/2018 - 00:00:00'
-END = verificacoes * STEP * 60
+END = verifications * STEP * 60
 
 # ---------------------------------------
 # define variavel com os dados de todos 
@@ -59,10 +62,11 @@ world = mosaik.World(SIM_CONFIG)
 # simulação
 # ---------------------------------------
 
-mosaiksim = world.start('MosaikSim', eid_prefix='Prosumer_', start=START, step_size=STEP * 60, debug=DEBUG)
+prosumersim = world.start('ProsumerSim', eid_prefix='Prosumer_', start=START, step_size=STEP * 60, debug=DEBUG)
 agent_controller = world.start('AgentContoller', eid_prefix='Agent_', start=START, step_size=STEP * 60, debug=DEBUG)
-mygridsim = world.start('MyGridSim', step_size=STEP * 60, debug=DEBUG)
-vendedorsim = world.start('VendedorSim', eid_prefix='Vendedor_', start=START, step_size=STEP * 60, debug=DEBUG)
+mygridsim = world.start('MyGridSim', step_size=STEP * 60 * 15, debug=DEBUG)
+marketsim = world.start('MarketSim', eid_prefix='Market_', start=START, step_size=STEP * 60, debug=DEBUG)
+customersim = world.start('CustomerSim', eid_prefix='Customer_', start=START, step_size=STEP * 60, debug=DEBUG)
 
 collector = world.start('Collector', step_size=STEP * 60)
 
@@ -98,11 +102,12 @@ for i in data['nodes']:
         else:
             prosumers_id.append((i['name'], False))
 
-prosumers = mosaiksim.Prosumer.create(len(prosumers_id), prosumers_id=prosumers_id)
-agents = agent_controller.Agent.create(len(prosumers), prosumers_id=prosumers_id)
-grid = mygridsim.Grid(gridfile=open('force.json', 'r'))
-vendedor = vendedorsim.Vendedor()
+prosumers = prosumersim.Prosumer.create(len(prosumers_id), prosumers_id=prosumers_id)
+agents = agent_controller.AgentStorageControl.create(len(prosumers), prosumers_id=prosumers_id)
+customers = customersim.Customer.create(len(prosumers_id), prosumers_id=prosumers_id)
 
+grid = mygridsim.Grid(gridfile=open('force.json', 'r'))
+market = marketsim.Market()
 monitor = collector.Monitor()
 
 # ---------------------------------------
@@ -123,14 +128,22 @@ for prosumer, agent in zip(prosumers, agents):
                   async_requests=True)
 
 
+# ---------------------------------------
+# conecta os prosumers aos customers 
+# e os customers ao market de energia
+# ---------------------------------------
+
+for prosumer, customer in zip(prosumers, customers):
+    world.connect(customer, market, 'order', async_requests=True)
+    world.connect(prosumer, customer, 'power_input', 'power_forecast')
 
 # ---------------------------------------
-# conecta os agentes ao agente grid e 
-# ao agente vendedor
+# conecta os agentes ao agente grid
 # ---------------------------------------
 for agent in agents:
     world.connect(grid, agent, 'load_nodes', async_requests=True)
-    world.connect(agent, vendedor, 'ordem', async_requests=True)
+
+
 
 # ---------------------------------------
 # conecta os prosumers ao agente grid
@@ -149,16 +162,16 @@ world.run(END)
 # organiza em gráficos e exibe-os na tela.
 # ---------------------------------------
 
-data = json.load(open('data.json', 'r'))
+# data = json.load(open('data.json', 'r'))
 
-datetime_serie = generate_timeseries(START, END, STEP)
+# datetime_serie = generate_timeseries(START, END, STEP)
 
-plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%m/%d/%Y - %H:%M'))
-plt.gca().xaxis.set_major_locator(mdates.HourLocator(interval=2))
-for i, j in data.items():
-    if i == 'MosaikSim-0.Prosumer_10' or i == 'MosaikSim-0.Prosumer_12':
-        plt.plot(datetime_serie, j['power_input'], '-')
+# plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%m/%d/%Y - %H:%M'))
+# plt.gca().xaxis.set_major_locator(mdates.HourLocator(interval=2))
+# for i, j in data.items():
+#     #if i == 'MosaikSim-0.Prosumer_10' or i == 'MosaikSim-0.Prosumer_12':
+#     plt.plot(datetime_serie, j['power_input'], '-')
 
-plt.gcf().autofmt_xdate()
-plt.legend(data.keys())
-plt.show()
+# plt.gcf().autofmt_xdate()
+# plt.legend(data.keys())
+# plt.show()

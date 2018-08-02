@@ -41,17 +41,17 @@ class Collector(mosaik_api.Simulator):
                 self.data[src][attr].append(round(value, 3))
         return time + self.step_size
 
-    def finalize(self):
-        data = dict()
-        print('Collected data')
-        for sim, sim_data in sorted(self.data.items()): 
-            print('- %s:' % sim)
-            data_attr = dict()
-            for attr, values in sorted(sim_data.items()):
-                data_attr[attr] = values
-                print('  - %s: %s' % (attr, values))
-            data['%s' % sim] = data_attr
-        json.dump(data, open('data.json','w'))
+    # def finalize(self):
+    #     data = dict()
+    #     print('Collected data')
+    #     for sim, sim_data in sorted(self.data.items()): 
+    #         print('- %s:' % sim)
+    #         data_attr = dict()
+    #         for attr, values in sorted(sim_data.items()):
+    #             data_attr[attr] = values
+    #             print('  - %s: %s' % (attr, values))
+    #         data['%s' % sim] = data_attr
+    #     json.dump(data, open('data.json','w'))
 
 if __name__ == '__main__':
     mosaik_api.start_simulation(Collector())

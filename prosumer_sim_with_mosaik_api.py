@@ -1,25 +1,25 @@
 import mosaik_api
-import my_simulator
+import prosumer
 
 META = {
     'models': {
         'Prosumer': {
             'public': True,
             'params': ['prosumers_id'],
-            'attrs': ['datetime', 'storage','storage_energy', 'power_input'],
+            'attrs': ['datetime', 'storage', 'storage_energy', 'power_input', 'power_forecast'],
         }
     }
 }
 
 
-class MosaikSim(mosaik_api.Simulator):
+class ProsumerSim(mosaik_api.Simulator):
     def __init__(self):
         super().__init__(META)
         self.eid_prefix = 'Prosumer_'
         self.entities = {}
 
     def init(self, sid, eid_prefix, start, step_size, debug=False):
-        self.simulator = my_simulator.Simulator(start)
+        self.simulator = prosumer.Simulator(start)
         self.step_size = step_size
         self.debug = debug
         self.eid_prefix = eid_prefix
@@ -52,7 +52,6 @@ class MosaikSim(mosaik_api.Simulator):
         return time + self.step_size
 
     def get_data(self, outputs):
-        models = self.simulator.prosumers
         data = {}
         for eid, attrs in outputs.items():
             model_idx = self.entities[eid]
@@ -60,12 +59,12 @@ class MosaikSim(mosaik_api.Simulator):
             for attr in attrs:
                 if attr not in self.meta['models']['Prosumer']['attrs']:
                     raise ValueError('Unknown output attribute: %s' % attr)
-                data[eid][attr] = getattr(models[model_idx], attr)
+                data[eid][attr] = getattr(self.simulator.prosumers[model_idx], attr)
         return data
 
 
 def main():
-    return mosaik_api.start_simulation(MosaikSim())
+    return mosaik_api.start_simulation(ProsumerSim())
 
 if __name__ == '__main__':
     main()
